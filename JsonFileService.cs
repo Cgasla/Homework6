@@ -4,8 +4,6 @@ namespace BookCatalog;
 
 public class JsonFileService
 {
-    // WriteIndented – красивый JSON с отступами
-    // UnsafeRelaxedJsonEscaping – кирилица пишется буквами, а не \u0412...
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,

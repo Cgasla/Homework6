@@ -31,16 +31,32 @@ public class BookRepository
         existing.Year = book.Year;
         existing.Genre = book.Genre;
         existing.Price = book.Price;
-        books.ResetItem(index); // обновить строку в таблице
+        books.ResetItem(index); // оновити рядок у таблиці
     }
 
     public void Delete(int id)
     {
         var book = books.FirstOrDefault(b => b.Id == id);
-        if (book != null) books.Remove(book);
+        if (book == null) return;
+
+        books.Remove(book);
+        RenumberIds(); 
     }
 
-    // ===== 3 критерия поиска через LINQ =====
+    private void RenumberIds()
+    {
+        for (int i = 0; i < books.Count; i++)
+            books[i].Id = i + 1;
+
+        books.ResetBindings(); 
+    }
+
+    public bool Exists(string title, string author, int excludeId = 0) =>
+        books.Any(b => b.Id != excludeId &&
+                       b.Title.Equals(title, StringComparison.OrdinalIgnoreCase) &&
+                       b.Author.Equals(author, StringComparison.OrdinalIgnoreCase));
+
+    // ===== 3 критерії пошуку через LINQ =====
 
     public IEnumerable<Book> SearchByTitle(string text) =>
         books.Where(b => b.Title.Contains(text, StringComparison.OrdinalIgnoreCase));

@@ -26,10 +26,8 @@ public class MainForm : Form
         dataGrid.DataSource = repo.GetAll();
     }
 
-    // ================= ПОБУДОВА ІНТЕРФЕЙСУ =================
     private void BuildUi()
     {
-        // ----- Таблиця (Grid) -----
         dataGrid.Dock = DockStyle.Fill;
         dataGrid.AutoGenerateColumns = false;
         dataGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
@@ -57,7 +55,6 @@ public class MainForm : Form
 
         dataGrid.CellDoubleClick += (s, e) => { if (e.RowIndex >= 0) OnEdit(); };
 
-        // ----- Панель кнопок -----
         var buttonPanel = new FlowLayoutPanel
         { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(5) };
 
@@ -67,8 +64,10 @@ public class MainForm : Form
         editBtn.Click += (s, e) => OnEdit();
         var delBtn = new Button { Text = "Видалити", AutoSize = true };
         delBtn.Click += (s, e) => OnDelete();
-        buttonPanel.Controls.AddRange(new Control[] { addBtn, editBtn, delBtn });
+        var helpBtn = new Button { Text = "Довідка", AutoSize = true };
+        helpBtn.Click += (s, e) => ShowHelp();
 
+        buttonPanel.Controls.AddRange(new Control[] { addBtn, editBtn, delBtn, helpBtn });
         // ----- Панель пошуку -----
         var searchPanel = new FlowLayoutPanel
         { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(5) };
@@ -103,7 +102,6 @@ public class MainForm : Form
         searchPanel.Controls.AddRange(new Control[]
             { cbCriterion, tbValue, lblTo, tbTo, searchBtn, resetBtn });
 
-        // ----- Меню -----
         var menu = new MenuStrip();
         var fileMenu = new ToolStripMenuItem("Файл");
         fileMenu.DropDownItems.AddRange(new ToolStripItem[]
@@ -125,7 +123,6 @@ public class MainForm : Form
         MainMenuStrip = menu;
     }
 
-    // ================= ФАЙЛИ =================
     private async Task OnOpenFile()
     {
         using var dlg = new OpenFileDialog
@@ -157,6 +154,13 @@ public class MainForm : Form
 
     private async Task OnSaveFile(bool saveAs)
     {
+        if (repo.GetAll().Count == 0)
+        {
+            var ask = MessageBox.Show(
+                "Список порожній. Файл буде перезаписано порожнім списком. Продовжити?",
+                "Увага", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (ask != DialogResult.Yes) return;
+        }
         string? path = currentPath;
 
         if (saveAs || path == null)
@@ -187,12 +191,13 @@ public class MainForm : Form
         }
     }
 
-    // ================= ДОДАТИ / РЕДАГУВАТИ / ВИДАЛИТИ =================
     private Book? GetSelectedBook() => dataGrid.CurrentRow?.DataBoundItem as Book;
-
     private void OnAdd()
     {
-        using var form = new BookEditForm(new Book { Year = DateTime.Now.Year });
+        using var form = new BookEditForm(
+            new Book { Year = DateTime.Now.Year },
+            (title, author) => repo.Exists(title, author));
+
         if (form.ShowDialog(this) == DialogResult.OK)
         {
             repo.Add(form.Book);
@@ -205,11 +210,11 @@ public class MainForm : Form
         var selected = GetSelectedBook();
         if (selected == null)
         {
-            MessageBox.Show("Спочатку виберіть запис у таблиці.");
+            MessageBox.Show("Спочатку виберіть запис у таблиці.", "Редагування",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        // редагуємо копію, щоб "Скасувати" нічого не змінювало
         var copy = new Book
         {
             Id = selected.Id,
@@ -220,7 +225,10 @@ public class MainForm : Form
             Price = selected.Price
         };
 
-        using var form = new BookEditForm(copy);
+        using var form = new BookEditForm(
+            copy,
+            (title, author) => repo.Exists(title, author, copy.Id));
+
         if (form.ShowDialog(this) == DialogResult.OK)
         {
             repo.Update(form.Book);
@@ -246,39 +254,70 @@ public class MainForm : Form
         }
     }
 
-    // ================= ПОШУК (LINQ) =================
     private void OnSearch()
     {
+        if (repo.GetAll().Count == 0)
+        {
+            MessageBox.Show("Список порожній. Спочатку відкрийте JSON-файл або додайте книгу.",
+                "Пошук", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         IEnumerable<Book> result;
         string text = tbValue.Text.Trim();
 
         switch (cbCriterion.SelectedIndex)
         {
             case 0:
-                result = repo.SearchByTitle(text);
-                break;
             case 1:
-                result = repo.SearchByAuthor(text);
+                if (text.Length == 0)
+                {
+                    MessageBox.Show("Введіть текст для пошуку.", "Пошук",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    tbValue.Focus();
+                    return;
+                }
+                result = cbCriterion.SelectedIndex == 0
+                    ? repo.SearchByTitle(text)
+                    : repo.SearchByAuthor(text);
                 break;
+
             default:
-                if (!int.TryParse(tbValue.Text, out int from))
+                if (!int.TryParse(tbValue.Text, out int yearFrom))
                 {
-                    MessageBox.Show("Введіть рік «від» числом, наприклад 1990.");
+                    MessageBox.Show("Введіть рік «від» числом, наприклад 1990.", "Пошук",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    tbValue.Focus();
                     return;
                 }
-                int to = int.MaxValue;
-                if (!string.IsNullOrWhiteSpace(tbTo.Text) && !int.TryParse(tbTo.Text, out to))
+                int yearTo = int.MaxValue;
+                if (!string.IsNullOrWhiteSpace(tbTo.Text) && !int.TryParse(tbTo.Text, out yearTo))
                 {
-                    MessageBox.Show("Рік «до» має бути числом.");
+                    MessageBox.Show("Рік «до» має бути числом.", "Пошук",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    tbTo.Focus();
                     return;
                 }
-                result = repo.FilterByYear(from, to);
+                if (yearFrom > yearTo)
+                {
+                    MessageBox.Show("Рік «від» не може бути більшим за рік «до».", "Пошук",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                result = repo.FilterByYear(yearFrom, yearTo);
                 break;
         }
 
-        dataGrid.DataSource = new BindingList<Book>(result.ToList());
-    }
+        var found = result.ToList();
+        if (found.Count == 0)
+        {
+            MessageBox.Show("За вашим запитом нічого не знайдено.", "Пошук",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
 
+        dataGrid.DataSource = new BindingList<Book>(found);
+    }
     private void ResetSearch()
     {
         tbValue.Clear();
@@ -286,10 +325,18 @@ public class MainForm : Form
         dataGrid.DataSource = repo.GetAll();
     }
 
-    // ================= ПРО ПРОГРАМУ =================
     private void ShowAbout()
     {
         using var form = new AboutForm();
         form.ShowDialog(this);
+    }
+    private void ShowHelp()
+    {
+        MessageBox.Show(
+            "Цю програму розробила Яна Кравчук,\n" +
+            "група К-26.",
+            "Довідка",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 }

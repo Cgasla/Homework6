@@ -4,15 +4,18 @@ public class BookEditForm : Form
 {
     public Book Book { get; private set; }
 
+    private readonly Func<string, string, bool>? isDuplicate;
+
     private readonly TextBox tbTitle = new();
     private readonly TextBox tbAuthor = new();
     private readonly TextBox tbGenre = new();
     private readonly NumericUpDown nudYear = new();
     private readonly NumericUpDown nudPrice = new();
 
-    public BookEditForm(Book book)
+    public BookEditForm(Book book, Func<string, string, bool>? isDuplicate = null)
     {
         Book = book;
+        this.isDuplicate = isDuplicate;
 
         Text = book.Id == 0 ? "Додати книгу" : "Редагувати книгу";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -68,19 +71,55 @@ public class BookEditForm : Form
 
     private void OnSave(object? sender, EventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(tbTitle.Text) || string.IsNullOrWhiteSpace(tbAuthor.Text))
+        string title = tbTitle.Text.Trim();
+        string author = tbAuthor.Text.Trim();
+        string genre = tbGenre.Text.Trim();
+        int currentYear = DateTime.Now.Year;
+
+        if (title.Length == 0)
         {
-            MessageBox.Show("Назва та автор обов'язкові.", "Помилка",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            Warn("Введіть назву книги.", tbTitle);
+            return;
+        }
+        if (author.Length == 0)
+        {
+            Warn("Введіть автора.", tbAuthor);
+            return;
+        }
+        if (genre.Length == 0)
+        {
+            Warn("Введіть жанр.", tbGenre);
+            return;
+        }
+        if (nudYear.Value < 1000 || nudYear.Value > currentYear)
+        {
+            Warn($"Рік видання має бути від 1000 до {currentYear}.", nudYear);
+            return;
+        }
+        if (nudPrice.Value <= 0)
+        {
+            Warn("Ціна має бути більшою за 0.", nudPrice);
+            return;
+        }
+        if (isDuplicate?.Invoke(title, author) == true)
+        {
+            Warn("Книга з такою назвою й автором уже є в списку.", tbTitle);
             return;
         }
 
-        Book.Title = tbTitle.Text.Trim();
-        Book.Author = tbAuthor.Text.Trim();
-        Book.Genre = tbGenre.Text.Trim();
+        Book.Title = title;
+        Book.Author = author;
+        Book.Genre = genre;
         Book.Year = (int)nudYear.Value;
         Book.Price = nudPrice.Value;
 
         DialogResult = DialogResult.OK;
+    }
+
+    private void Warn(string message, Control field)
+    {
+        MessageBox.Show(message, "Некоректні дані",
+            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        field.Focus();
     }
 }
